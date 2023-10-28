@@ -1,7 +1,6 @@
-use std::env;
-use std::fs;
-use std::process::exit;
-
+use std::env::args;
+use std::fs::{metadata, read_to_string};
+use std::process::{exit, Command, Stdio};
 const WELL_KNOWN_ENV_FILES: [&str; 15] = [
     ".env",
     ".env.local",
@@ -21,24 +20,19 @@ const WELL_KNOWN_ENV_FILES: [&str; 15] = [
 ];
 
 fn main() {
-    let file = match env::args().nth(1) {
+    let file = match args().nth(1) {
         Some(file) => file,
         None => {
-            print!(
-                "{}\n",
-                "No .env file name provided, Looking for common .env files"
-            );
+            println!("No .env file name provided, Looking for common .env files");
             check_well_known_env_files()
         }
     };
-    let envs = get_envs_from_file(&file);
-    println!("Found {} .envs", envs.len());
-    println!("{:?}", envs);
+    get_envs_from_file(file.as_str())
 }
 
 fn check_well_known_env_files() -> String {
     for file_name in WELL_KNOWN_ENV_FILES.iter() {
-        if fs::metadata(file_name).is_ok() {
+        if metadata(file_name).is_ok() {
             return file_name.to_string();
         }
     }
@@ -46,11 +40,11 @@ fn check_well_known_env_files() -> String {
     exit(1)
 }
 
-fn get_envs_from_file(file: &str) -> Vec<String> {
+fn get_envs_from_file(file: &str) {
     let mut envs: Vec<String> = Vec::new();
-    let content = match fs::read_to_string(file) {
+    let content = match read_to_string(file) {
         Ok(content) => content,
-        Err(_) => return envs,
+        Err(_) => return,
     };
     for line in content.lines() {
         if line.starts_with('#') {
@@ -64,5 +58,16 @@ fn get_envs_from_file(file: &str) -> Vec<String> {
         let value: String = env[1].replace("\"", "").replace("\'", "").replace(" ", "");
         envs.push(format!("{}={}", key, value));
     }
-    envs
+    println!("Setting secrets for fly.io... Please wait...");
+    let mut command = Command::new("fly")
+        .arg("secrets")
+        .arg("set")
+        .arg(envs.join(" "))
+        .arg("-a")
+        .arg("comcord")
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .unwrap();
+    command.wait().unwrap();
 }
